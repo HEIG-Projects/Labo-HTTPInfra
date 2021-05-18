@@ -1,5 +1,5 @@
 {
-  "name": "express",
+  "name": "express-res",
   "version": "1.0.0",
   "description": "Partie 2 du labo HTTP",
   "main": "index.js",
@@ -9,6 +9,7 @@
   "author": "Axel Vallon et Lev Pozniakoff",
   "license": "ISC",
   "dependencies": {
-    "chance": "^1.1.7"
+    "chance": "^1.1.7",
+    "express": "^4.17.1"
   }
 }
