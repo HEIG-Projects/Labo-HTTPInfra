@@ -79,35 +79,122 @@ Il s'agit de la configuration de base, donc elle n'est pas encore très détaill
 
 ## Partie 3
 
-```
-docker run -d --name express_dynamic res/nodeserv
-docker run -d --name nginx_static res/nginx-server
-docker inspect nginx_static | grep -i ipaddress
-docker inspect express_dynamic | grep -i ipaddress
+Le but de cette partie est de mettre à disposition un pool de container pour créer un reverse proxy
+
+### Configuration
+
+Il y a 3 image docker qu'il faudra créer au préalable pour mettre en place cette configuration.
+
+Les deux première ont déjà été crée dans les étape différentes Il suffit de vous documenter ci-dessus pour les créer), et la dernière est disponible dans le dossier `Labo-HTTPInfra/reverse-proxy` et son implémentation est plus bas dans cette documentation.
+
+#### Fonctionnement
+
+L'infrastructure sera similaire à la suivante : Les deux containeurs des images crées aux étapes précédentes serviront de fournisseurs de ressource au serveur de reverse proxy. Lorsqu'un client souhaitera obtenir du contenu, il contactera le serveur approprié, et renverra le reverse-proxy reverra lui-même les ressource qu'il a pu récupérer. 
+
+![image-20210519134507669](figures/image-20210519134507669.png)
+
+#### Reverse proxy
+
+Premièrement, il faut créer un Dockerfile qui puisse créer le serveur apache reverse-proxy.
+
+**Dockerfile**
+
+```dockerfile
+FROM php:7.4-apache
+
+COPY conf/ /etc/apache2 # copie de la configuration locale sur serveur
+
+RUN apt-get update && \
+  apt-get install -y vim nano tcpdump netcat net-tools # outils administration
+
+RUN a2enmod proxy proxy_http # module proxy
+
+RUN a2ensite 000-* 001-* #active site
 ```
 
-![image-20210518222316857](figures/image-20210518222316857.png)
+On voit sur ce Dockerfile ci-dessus qu'il copie le contenu du dossier conf en local. la structure est la suivante
+
+```
+.
+├── Dockerfile
+└── conf
+    └── sites-available
+        ├── 000-default.conf
+        └── 001-reverse-proxy.conf
+```
+
+**000-default.conf**
+
+```
+<VirtualHost *:80>
+</VirtualHost>
+```
+
+Cette comfiguration étonnante permet de refuser toute les connexions qui ne vont pas en direction de l'hôte `res.heigvf.ch`
+
+**001-reverse-proxy.conf**
 
 ```
 <VirtualHost *:80>
         ServerName res.heigvd.ch
 
-        ErrorLog ${APACHE_LOG_DIR}/error.log
-        CustomLog ${APACHE_LOG_DIR}/access.log combined
+        #ErrorLog ${APACHE_LOG_DIR}/error.log
+        #CustomLog ${APACHE_LOG_DIR}/access.log combined
 
-        ProxyPass "/api/password/" "http://172.17.0.2:3000/"
+        ProxyPass "/api/password/" "http://172.17.0.2:3000/" #Node
         ProxyPassReverse "/api/password/" "http://172.17.0.2:3000/"
 
-        ProxyPass "/" "http://172.17.0.3:80/"
+        ProxyPass "/" "http://172.17.0.3:80/" # nginx statique
         ProxyPassReverse "/" "http://172.17.0.3:80/"
 </VirtualHost>
-
-# vim: syntax=apache ts=4 sw=4 sts=4 sr noet
 ```
 
-a2ensite 001*
+Cette configuration va permettre de gérer deux redirection: si l'host de destination est bien `res.heigvd.ch`, alors il va utiliser cette configuration. Si l'URL qui est accédé est `/api/password/`, alors ce sera redirigé vers le serveur Node.js. Pour toute les autre URL, il va regarder sur le serveur statique nginx. 
 
-a2enmod proxy (proxy_http pas necessaire)
+**Notes** : Il faut bien faire attention à ce que les containers aient les bonnes adresses IP à leur démarrage.
 
-service apache2 restart
+## Démonstration
+
+1. Cloner ce repository
+
+2. Build les images de l'étape 1 et 2 avec leur script respectif `build-image.sh`
+
+3. Allumer les 2 premiers containers dans cette ordre
+
+   1. `docker run -d --name express_dynamic res/nodeserv`
+   2. `docker run -d --name nginx_static res/nginx-server`
+
+4. Vérifier que les adresses IP soient les bonnes
+
+   1. `docker inspect express_dynamic | grep -i ipaddress` -> `172.17.0.2`
+   2. `docker inspect nginx_static | grep -i ipaddress` -> `172.17.0.3`
+   3. Si incorrect, changer fichier `docker-images/reverse-proxy/conf/sites-available/001-reverse-proxy.conf` avec les bonne adresse.
+
+5. Placer vous dans le dossier `docker-images/reverse-proxy` et exécuter le script `build-image.sh`
+
+6. Lancer un container avec `run -d -p 8080:80 res/reverse-proxy`
+
+7. Ajouter une correspondance entre votre adresse IP d'accès à vos contrainer (127.0.0.1 pour Docker Desktop ou 192.168.99.100 docker-machine) et l'adresse `res.heigvd.ch`
+
+8. Essayer la configuration
+
+   1. Sur votre navigateur avec l'adresse http://res.heigvd.ch:8080
+
+      ![image-20210519142736229](figures/image-20210519142736229.png)
+
+      
+
+   2. En tentant d'accéder au serveur Node via le reverse proxy
+
+      ![image-20210519142842401](figures/image-20210519142842401.png)
+
+      
+
+   3. Accéder à une page inexistante, le serveur pas défaut retourne un statut 404![image-20210519143006506](figures/image-20210519143006506.png)
+
+   4. Accéder avec l'adresse ip cible directement ne fonctionne pas non plus car il faut que l'hôte de destination soit le bon![image-20210519143255858](figures/image-20210519143255858.png)
+
+
+
+
 
