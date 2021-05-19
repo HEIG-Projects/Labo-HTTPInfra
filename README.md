@@ -75,3 +75,39 @@ Il s'agit de la configuration de base, donc elle n'est pas encore très détaill
 
 ## Partie 2
 
+
+
+## Partie 3
+
+```
+docker run -d --name express_dynamic res/nodeserv
+docker run -d --name nginx_static res/nginx-server
+docker inspect nginx_static | grep -i ipaddress
+docker inspect express_dynamic | grep -i ipaddress
+```
+
+![image-20210518222316857](figures/image-20210518222316857.png)
+
+```
+<VirtualHost *:80>
+        ServerName res.heigvd.ch
+
+        ErrorLog ${APACHE_LOG_DIR}/error.log
+        CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+        ProxyPass "/api/password/" "http://172.17.0.2:3000/"
+        ProxyPassReverse "/api/password/" "http://172.17.0.2:3000/"
+
+        ProxyPass "/" "http://172.17.0.3:80/"
+        ProxyPassReverse "/" "http://172.17.0.3:80/"
+</VirtualHost>
+
+# vim: syntax=apache ts=4 sw=4 sts=4 sr noet
+```
+
+a2ensite 001*
+
+a2enmod proxy (proxy_http pas necessaire)
+
+service apache2 restart
+
