@@ -1,8 +1,10 @@
 # Labo-HTTPInfra
 
+Ce github contient le différentes étapes pour créer une infrastructure web sur Docker. Les différentes étape permettent au lecteur de créer progressivement son infrastructure. Il est possible que certains fichiers ne soient plus disponible dans leur état présenté, car ils ont été modifier pour exécuter les étapes suivantes, mais vous pourrez toujours modifier les fichiers cibles avec leur contenu qui sont présenté dans la configuration de chacune des étapes.
+
 ## Etape 1
 
-L'objectif de cette partie est la création d'un serveur web "dockerisé" servant du serveur statique
+L'objectif de cette partie est la création d'un serveur web "dockerisé" servant du serveur statique.
 
 ### Configuration
 
@@ -37,7 +39,7 @@ docker run -d -p 8989:80 res/nginx-server
 # -p port-mapping, écoute sur le port 8989 en local de la part du port 80 sur le container
 ```
 
-Ce script permet de créer un container avec l'image préalablement crée. Il ouvre un port http du serveur sur le port 8989.
+Ce script permet de créer un container avec l'image préalablement crée. Il ouvre un port http du serveur sur le port 8989. Ce script est seulement utile pour observer un accès à ce site statique.
 
 ### Démonstration
 
@@ -59,19 +61,19 @@ Ce script permet de créer un container avec l'image préalablement crée. Il ou
 
       ![image-20210518211414819](figures/image-20210518211414819.png)
 
-### Fichier de configuration du serveur
+### Fichier de configuration nginx
 
 Pour visualiser le contenu du fichier de configuration, on va créer un container  à partir de l'image, récupérer son id avec `docker ps`, et  ensuite lancer une de ces deux commandes :
 
-- `winpty docker exec -it res/nginx-server //bin//bash` (Windows)
+- `winpty docker run -it res/nginx-server //bin//bash` (Windows)
 
-- `docker exec -it res/nginx-server /bin/bash` (Linux, Mac)
+- `docker exec -run res/nginx-server /bin/bash` (Linux, Mac)
 
 Dès qu'on est dans le système de fichier, il est possible de visualiser ce fichier de configuration nginx avec `cat /etc/nginx/nginx.conf`
 
 ![image-20210518210253132](figures/image-20210518210253132.png)
 
-Il s'agit de la configuration de base, donc elle n'est pas encore très détaillée.
+Il s'agit de la configuration de base, donc elle n'est pas très détaillée.
 
 ## Partie 2
 
@@ -79,7 +81,7 @@ Il s'agit de la configuration de base, donc elle n'est pas encore très détaill
 
 ## Partie 3
 
-Le but de cette partie est de mettre à disposition un pool de container pour créer un reverse proxy
+Le but de cette partie est de mettre à disposition un pool de container pour créer un reverse proxy. Le serveur de reverse proxy aura pour but de filtrer les requêtes qu'ils lui seront envoyée, et de les rediriger vers les bon serveurs pour avoir qu'un seul point d'accès au système.
 
 ### Configuration
 
@@ -130,7 +132,7 @@ On voit sur ce Dockerfile ci-dessus qu'il copie le contenu du dossier conf en lo
 </VirtualHost>
 ```
 
-Cette comfiguration étonnante permet de refuser toute les connexions qui ne vont pas en direction de l'hôte `res.heigvf.ch`
+Cette configuration étonnante permet de refuser toute les connexions qui ne vont pas en direction de l'hôte `res.heigvf.ch`
 
 **001-reverse-proxy.conf**
 
@@ -172,7 +174,7 @@ Cette configuration va permettre de gérer deux redirection: si l'host de destin
 
 5. Placer vous dans le dossier `docker-images/reverse-proxy` et exécuter le script `build-image.sh`
 
-6. Lancer un container avec `run -d -p 8080:80 res/reverse-proxy`
+6. Lancer un container avec `docker run -d -p 8080:80 res/reverse-proxy`
 
 7. Ajouter une correspondance entre votre adresse IP d'accès à vos contrainer (127.0.0.1 pour Docker Desktop ou 192.168.99.100 docker-machine) et l'adresse `res.heigvd.ch`
 
@@ -196,5 +198,146 @@ Cette configuration va permettre de gérer deux redirection: si l'host de destin
 
 
 
+## Etape 4
 
+Doit faire script adapté
 
+![image-20210521150946544](figures/image-20210521150946544.png)
+
+Ajouter appel de fonction load() à la fin du script.
+
+load();
+
+setIntervals( load, 2000 ); // toutes les 2000 ms ça change automatiquement.
+
+remplacer un bout dans code dans html avec <span class="skills" ... >
+
+## Etape 5
+
+Le problème de l'étape 3 est qu'on est dépendant de l'adresse IP de chaque machine pour que le reverse proxy fonctionne. On va utiliser deux méthodes, la première est l'utilisation des variables environnements lors du run du container pour qu'il puisse connaître les adresses IP des deux serveurs web, et la deuxième est l'utilisation d'un script PHP qui va créer une configuration pour le reverse proxy avec les IP qu'il récupère via des variables d'environnement passées par Docker.
+
+### Démonstration
+
+1. Cloner ce repository
+2. Build les images de l'étape 1 et 2 avec leur script respectif `build-image.sh`
+3. Allumer ces 2 premiers containers n'importe quel ordre : 
+
+   1. `docker run -d --name express_dynamic res/nodeserv`
+   2. `docker run -d --name nginx_static res/nginx-server`
+
+4. Récupérer les adresses IP de chaque serveur
+   1. `docker inspect express_dynamic | grep -i ipaddress` -> `DYNAMIC_APP`
+   2. `docker inspect nginx_static | grep -i ipaddress` -> `STATICAPP`
+5.  Placer vous dans le dossier `docker-images/reverse-proxy` et exécuter le script `build-image.sh`
+
+6. Lancer un container avec ` docker run -e STATIC_APP=172.17.0.3:80 -e DYNAMIC_APP=172.17.0.2:3000 -p 8080:80 res/reverse-proxy` En spécifiant les bonne adresse IP en fonction de ce qui a été récupéré à l'étape 4 de cette démonstration.
+
+   ![image-20210521180607274](figures/image-20210521180607274.png)
+
+   Malgrès les messages d'erreur, le serveur est tout de même fonctionnel.
+
+7. Accéder au site 
+
+   ![image-20210521174453010](figures/image-20210521174453010.png)
+
+   
+
+### Configuration
+
+Nous avons du rajouter plusieurs fichiers pour permettre de mettre en place cette implémentation
+
+**/docker-images/reverse-proxy/apache2-foreground**
+
+```
+#!/bin/bash
+set -e
+
+# Add setup for part 5 of RES labo
+echo "Setup for the RES lab..."
+echo "Static App URL: $STATIC_APP"
+echo "Dynamic App URL: $DYNAMIC_APP"
+php /var/apache2/templates/config-template.php > /etc/apache2/sites-available/001-reverse-proxy.conf
+
+# Note: we don't just use "apache2ctl" here because it itself is just a shell-script wrapper around apache2 which provides extra functionality like "apache2ctl start" for launching apache2 in the background.
+# (also, when run as "apache2ctl <apache args>", it does not use "exec", which leaves an undesirable resident shell process)
+
+: "${APACHE_CONFDIR:=/etc/apache2}"
+: "${APACHE_ENVVARS:=$APACHE_CONFDIR/envvars}"
+if test -f "$APACHE_ENVVARS"; then
+        . "$APACHE_ENVVARS"
+fi
+
+# Apache gets grumpy about PID files pre-existing
+: "${APACHE_RUN_DIR:=/var/run/apache2}"
+: "${APACHE_PID_FILE:=$APACHE_RUN_DIR/apache2.pid}"
+rm -f "$APACHE_PID_FILE"
+
+# create missing directories
+# (especially APACHE_RUN_DIR, APACHE_LOCK_DIR, and APACHE_LOG_DIR)
+for e in "${!APACHE_@}"; do
+        if [[ "$e" == *_DIR ]] && [[ "${!e}" == /* ]]; then
+                # handle "/var/lock" being a symlink to "/run/lock", but "/run/lock" not existing beforehand, so "/var/lock/something" fails to mkdir
+                #   mkdir: cannot create directory '/var/lock': File exists
+                dir="${!e}"
+                while [ "$dir" != "$(dirname "$dir")" ]; do
+                        dir="$(dirname "$dir")"
+                        if [ -d "$dir" ]; then
+                                break
+                        fi
+                        absDir="$(readlink -f "$dir" 2>/dev/null || :)"
+                        if [ -n "$absDir" ]; then
+                                mkdir -p "$absDir"
+                        fi
+                done
+
+                mkdir -p "${!e}"
+        fi
+done
+
+exec apache2 -DFOREGROUND "$@"
+
+```
+
+Ce script a été récupéré sur le github https://github.com/docker-library/php/tree/47e681a74116da5a99e804bef5a7808df40d831f/7.4/buster/apache, et a été créé par le fournisseurs de l'image parent. Nous l'avons récupéré et avons rajouter quelque lignes supplémentaires afin d'avoir une vue sur ce qui se passe lors de la création d'un container à partir de notre image, et aussi pour exécuter en php le template qui contient la configuration dynamique de notre proxy. Ce script en local a la priorité sur le script qui était sensé être importé depuis `docker hub`.
+
+**docker-images/reverse-proxy/templates/config-template.php**
+
+```php
+<?php
+        $ip_static = getenv('STATIC_APP');
+        $ip_dynamic = getenv('DYNAMIC_APP');
+?>
+<VirtualHost *:80>
+        ServerName res.heigvd.ch
+
+        #ErrorLog ${APACHE_LOG_DIR}/error.log
+        #CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+        ProxyPass '/api/password/' 'http://<?php print $ip_dynamic ?>/'
+        ProxyPassReverse '/api/password/' 'http://<?php print $ip_dynamic ?>/'
+
+        ProxyPass '/' 'http://<?php print $ip_static ?>/'
+        ProxyPassReverse '/' 'http://<?php print $ip_static ?>/'
+</VirtualHost>
+
+```
+
+Ce script `php` va être exécuté dans le script présenté ci-dessus pour écraser le fichier de configuration `/etc/apache2/sites-available/001-reverse-proxy.conf`. Il va récupérer les variables d'environnement fournies lors du build du container pour avoir les adresses IP du serveur statique et du serveur dynamique de manière dynamique, car auparavant nous étions obligé de supposé qu'elles avaient été allumé dans un ordre précis. 
+
+**docker-images/reverse-proxy/Dockerfile**
+
+```dockerfile
+FROM php:7.4-apache
+
+COPY apache2-foreground /usr/local/bin/
+
+COPY conf/ /etc/apache2/
+COPY templates/ /var/apache2/templates/
+
+RUN apt-get update && \
+  apt-get install -y vim nano tcpdump netcat net-tools
+
+RUN a2enmod proxy proxy_http && a2ensite 000-* 001-* #active les configurations du proxy
+```
+
+Nous avons été obligé du coup de modifier le Dockerfile, afin de pouvoir copier nos deux nouveau script.
