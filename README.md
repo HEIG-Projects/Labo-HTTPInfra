@@ -75,7 +75,168 @@ Il s'agit de la configuration de base, donc elle n'est pas encore très détaill
 
 ## Partie 2
 
+### Objectif
 
+Nous voulons dans cette partie lancer un container qui génèrera du contenu dynamiquement. Ce contenu doit être au format JSON et accessible depuis un navigateur web.
+
+### Explication de la configuration
+
+#### Exécution hors docker
+
+Toute la configuration s'exécute dans le dossier express-image
+
+La première étape a été d'installer les différents modules utilisés. En l'occurrence: express et chance.
+
+Donc, dans le dossier src :
+
+````bash
+npm install --save express
+npm install --save chance
+````
+
+Express permet de générer des serveurs HTTP très rapidement. Le module Chance quant à lui, permet de générer des données aléatoirement.
+
+Il a fallut modifier ensuite le index.js afin de générer dynamiquement des données.
+
+````javascript
+var Chance  = require('chance');
+var chance = new Chance();
+
+var express  = require('express');
+var app = express();
+
+app.get('/test', function(req, res){
+    res.send("Hello RES - test ");
+});
+
+app.get("/api/companies", function(req, res){
+    res.send(generateCompanies());
+});
+
+app.get('/', function(req, res){
+    res.send("Welcome on the RES server");
+});
+
+app.listen(3000, function () {
+    console.log("Accept HTTP requests on port 3000");
+});
+
+
+function generateCompanies(){
+    var numberOfCompanies = chance.integer({
+        min:0,
+        max:10
+    });
+    console.log("Number of companies generated: " + numberOfCompanies);
+    var companies = [];
+    for(var i = 0; i < numberOfCompanies; ++i) {
+        var companyName = chance.company();
+        var companyNameNoSpace = companyName.replace(/\W/g, '');
+        companies.push({
+            name: companyName,
+            adress: chance.address({
+                short_suffix: true
+            }),
+            website: chance.url({
+                domain: "www." + companyNameNoSpace + ".com"
+            }),
+            income: chance.dollar({
+                min: 100000,
+                max: 1000000000
+            })
+        });
+    }
+
+    console.log(companies);
+    return companies;
+}
+
+````
+
+Nous avons décidé de générer des entreprises avec leur nom, leur adresse, leur site web, et leurs revenus.
+
+A ce niveau, l'application est déjà exécutable grâce à node. 
+
+Rendez vous dans le dossier src, ouvrez un terminal tapez la commande : 
+
+````bash
+node index.js
+````
+
+Ceci va lancer l'application et afficher:
+
+````
+Accepting HTTP requests on port 3000.
+````
+
+Ouvrez ensuite un 2e terminal, et tapez la commande:
+
+````bash
+telnet localhost 3000
+````
+
+Attendez que la connexion s'exécute puis taper la requête HTTP
+
+````http
+GET /api/companies HTTP/1.0
+````
+
+Ceci affichera un nombre aléatoire d'entreprise au format JSON, celles-ci générées aléatoirement: 
+
+![image-20210526193449854](figures/image-20210526193449854.png)
+
+#### Exécution dockerisée
+
+Il faut d'abord écrire le docker file: 
+
+````dockerfile
+FROM node:14.17
+
+COPY src /opt/app
+
+CMD ["node", "/opt/app/index.js"]
+````
+
+Celui-ci importe node dans sa version 14.17 qui est la version la plus récente. On peut également voir que le docker défini aussi le  fichier javascript appelé. En l'occurence, c'est celui créé précédemment à savoir index.js.
+
+Pour simplifier la création de l'image et l'exécution, nous avons créés 2 scripts: build-image.sh et run-container.sh. Ils doivent être exécuté dans cet ordre afin de créer l'image docker.
+
+build-image:
+
+````bash
+#!/bin/bash
+
+docker build -t res/nodeserv .
+````
+
+run-container:
+
+````bash
+#!/bin/bash
+docker run -d -p 9090:3000 res/nodeserv
+# -d pour démarre en arrière plan
+# -p port-mapping, écoute sur le port 8989 en local de la part du port 80 sur le container
+````
+
+Ceci fait, nous vérifions que l'image docker est bien en cours de fonctionnement grâce à la commande ``docker ps``
+
+![image-20210526195221680](figures/image-20210526195221680.png)
+
+Ainsi nous pouvons n'avons plus qu'à nous rendre sur le navigateur pour exécuter la requête. Pour ce faire, il faut ouvrir le navigateur et dans la bar de recherche taper ``localhost:9090/api/companies``
+
+![image-20210526190002188](figures/image-20210526190002188.png)
+
+### En bref: démonstration
+
+1. Cloner ce projet
+2. Se placer dans le dossier `/docker-image/etape2/express-images`
+3. Lancer le script `build-image.sh`
+4. Lancer le script `run-container.sh`
+
+A ce moment votre image docker est lancé et fonctionnelle.
+
+5. Sur votre navigateur, dans la bar de recherche tapez: `localhost:9090/api/companies`
+6. Le navigateur vous afficher les entreprises générées dynamiquement
 
 ## Partie 3
 
