@@ -8,7 +8,7 @@ L'objectif de cette partie est la création d'un serveur web "dockerisé" servan
 
 ### Configuration
 
-La configuration de cette partie est disponible dans le dossier `./docker-images/nginx-static-image`
+La configuration de cette partie est disponible dans le dossier `./docker-images/etape_1/nginx-static-image`
 
 Vous trouvez trois fichier
 
@@ -248,7 +248,7 @@ Le but de cette partie est de mettre à disposition un pool de container pour cr
 
 Il y a 3 image docker qu'il faudra créer au préalable pour mettre en place cette configuration.
 
-Les deux première ont déjà été crée dans les étape différentes Il suffit de vous documenter ci-dessus pour les créer), et la dernière est disponible dans le dossier `Labo-HTTPInfra/reverse-proxy` et son implémentation est plus bas dans cette documentation.
+Les deux première ont déjà été crée dans les étape différentes Il suffit de vous documenter ci-dessus pour les créer), et la dernière est disponible dans le dossier `Labo-HTTPInfra/etape_3/reverse-proxy` et son implémentation est plus bas dans cette documentation.
 
 #### Fonctionnement
 
@@ -304,8 +304,8 @@ Cette configuration étonnante permet de refuser toute les connexions qui ne von
         #ErrorLog ${APACHE_LOG_DIR}/error.log
         #CustomLog ${APACHE_LOG_DIR}/access.log combined
 
-        ProxyPass "/api/password/" "http://172.17.0.2:3000/" #Node
-        ProxyPassReverse "/api/password/" "http://172.17.0.2:3000/"
+        ProxyPass "/api/companies/" "http://172.17.0.2:3000/" #Node
+        ProxyPassReverse "/api/companies/" "http://172.17.0.2:3000/"
 
         ProxyPass "/" "http://172.17.0.3:80/" # nginx statique
         ProxyPassReverse "/" "http://172.17.0.3:80/"
@@ -314,13 +314,13 @@ Cette configuration étonnante permet de refuser toute les connexions qui ne von
 
 Cette configuration va permettre de gérer deux redirection: si l'host de destination est bien `res.heigvd.ch`, alors il va utiliser cette configuration. Si l'URL qui est accédé est `/api/password/`, alors ce sera redirigé vers le serveur Node.js. Pour toute les autre URL, il va regarder sur le serveur statique nginx. 
 
-**Notes** : Il faut bien faire attention à ce que les containers aient les bonnes adresses IP à leur démarrage.
+**Notes** : Il faut bien faire attention à ce que les containers aient les bonnes adresses IP à leur démarrage, et donc les allumer dans l'ordre décrit dans la démonstration.
 
 ## Démonstration
 
 1. Cloner ce repository
 
-2. Build les images de l'étape 1 et 2 avec leur script respectif `build-image.sh`
+2. Construire les images de l'étape 1 et 2 avec leur script respectif `build-image.sh`
 
 3. Allumer les 2 premiers containers dans cette ordre
 
@@ -682,7 +682,7 @@ Le problème de l'étape 3 est qu'on est dépendant de l'adresse IP de chaque ma
 ### Démonstration
 
 1. Cloner ce repository
-2. Build les images de l'étape 1 et 2 avec leur script respectif `build-image.sh`
+2. Build les images dans dans le répertoires pour les mettre à jour.
 3. Allumer ces 2 premiers containers n'importe quel ordre : 
 
    1. `docker run -d --name express_dynamic res/nodeserv`
@@ -691,15 +691,18 @@ Le problème de l'étape 3 est qu'on est dépendant de l'adresse IP de chaque ma
 4. Récupérer les adresses IP de chaque serveur
    1. `docker inspect express_dynamic | grep -i ipaddress` -> `DYNAMIC_APP`
    2. `docker inspect nginx_static | grep -i ipaddress` -> `STATICAPP`
-5.  Placer vous dans le dossier `docker-images/reverse-proxy` et exécuter le script `build-image.sh`
+   
+5. Transformer les caractères de sauts à la lignes du fichier `apache2-foreground` de `CRLF` à `LF`.
 
-6. Lancer un container avec ` docker run -e STATIC_APP=172.17.0.3:80 -e DYNAMIC_APP=172.17.0.2:3000 -p 8080:80 res/reverse-proxy` En spécifiant les bonne adresse IP en fonction de ce qui a été récupéré à l'étape 4 de cette démonstration.
+6. Placer vous dans le dossier `docker-images/reverse-proxy` et exécuter le script `build-image.sh`
+
+7. Lancer un container avec ` docker run -e STATIC_APP=172.17.0.3:80 -e DYNAMIC_APP=172.17.0.2:3000 -p 8080:80 res/reverse-proxy` En spécifiant les bonne adresse IP en fonction de ce qui a été récupéré à l'étape 4 de cette démonstration.
 
    ![image-20210521180607274](figures/image-20210521180607274.png)
 
    Malgrès les messages d'erreur, le serveur est tout de même fonctionnel.
 
-7. Accéder au site 
+8. Accéder au site 
 
    ![image-20210521174453010](figures/image-20210521174453010.png)
 
@@ -804,3 +807,83 @@ RUN a2enmod proxy proxy_http && a2ensite 000-* 001-* #active les configurations 
 ```
 
 Nous avons été obligé du coup de modifier le Dockerfile, afin de pouvoir copier nos deux nouveau script.
+
+## Bonus
+
+### Load balancing & Sticky Session
+
+Nous avons mis en place la première partie du bonus dans le répertoire `docker-images/load-balancing`
+
+Elle récupère la structure dynamique de la partie 5, en ajoutant les concept de `load balancing` qui va permettre au reverse-proxy de répartir les demandes des clients.
+
+#### Configuration
+
+La configuration que nous avons mis en place remet à jour l'étape 5 afin que le reverse proxy permettent de distribuer au différentes client différents serveur afin de diminuer la charge de ceux-ci
+
+Nous avons mis en place deux configuration, une pour le `round-robin` avec le Node.js, et un avec les `stickysession` pour le Node.js.
+
+##### Différence 2 configurations
+
+Nous avons pu observer le fonctionnement de round-robin sans difficulté via les console Docker de nos différentes Nodes.js allumés. On peut voir que notre site statique va contacter toute les 3 secondes le serveur Node.js pour récupérer une entreprise à afficher. Et en observant en parallèle ces deux console, on visualise que chaque containeur est appelé un par un à la suite, comme prévu.
+
+Par contre, nous avons initié une capture `tcpdump` pour visualiser le trafic avec les serveurs statique, et nous avons observé qu'avec `stickysession`, que seulement la première route est appelé, et nous avons supposé que c'est dû au cookie qui était envoyé au client, qui lui permettait donc de dès que la connexion a été établie, le serveur set le cookie, et le client contactera toujours le même serveur.
+
+```
+tcpdump -A -s 0 'tcp port 80 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)'
+# To monitor HTTP traffic including request and response headers and message body:
+```
+
+![image-20210530203237678](figures/image-20210530203237678.png)
+
+#### Démonstration
+
+1. Lancer 4 container donc les images ont été récupérée à l'étape 5.
+
+```
+docker run -d --name express_dynamic1 res/nodeserv
+docker run -d --name express_dynamic2 res/nodeserv
+docker run -d --name nginx_static1 res/nginx-server
+docker run -d --name nginx_static2 res/nginx-server
+```
+
+2. Transformer les caractères de sauts à la lignes du fichier `apache2-foreground` de `CRLF` à `LF`. (github modifie les caractères de saut à la ligne)
+3. Lancer le script `./build-image.sh`.
+4. Lancer le container que vous venez de créer avec la commande suivante 
+
+```
+docker run -e DYNAMIC_APP1=172.17.0.2 -e DYNAMIC_APP2=172.17.0.3 -e STATIC_APP1=172.17.0.4 -e STATIC_APP2=172.17.0.5 -p 8080:80 res/reverse-proxy
+```
+
+Veuillez notez qu'il faudra adapter les adresse IP avec les container que vous venez de créer
+
+### Web app
+
+Nous avons rechercher une configuration qui puisse permettre de configurer l'infrastructure complète, et après plusieurs essai nous avons trouver la solution fournie par https://www.portainer.io/
+
+Pour l'installer, nous documenteront ci-dessous l'installation sur Windows avec Docker Desktop
+
+Pour trouverez ici https://documentation.portainer.io/v2.0/deploy/ceinstalldocker/ d'autres types installations possible.
+
+#### Installation
+
+1. Lancer `Powershell` en admin
+
+2. Exécuter la commande :
+
+   ```
+   docker volume create portainer_data
+   ```
+
+3. Et lancer le containeur directement depuis l'image disponible
+
+   ```
+   docker run -d -p 8000:8000 -p 9000:9000 --name=portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce
+   ```
+
+4. Accéder avec votre navigateur à http://localhost:9000
+
+5. Créer un compte qui sera sauvegardé sur le volume docker
+
+6. Tout est configuré, vous pouvez naviguer et découvrir toute les options possible.
+
+   ![image-20210530183812514](figures/image-20210530183812514.png)
