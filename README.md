@@ -359,19 +359,321 @@ Cette configuration va permettre de gérer deux redirection: si l'host de destin
 
 
 
-## Etape 4
+## Partie 4
 
-Doit faire script adapté
+### Objectif
 
-![image-20210521150946544](figures/image-20210521150946544.png)
+Le but de cette partie est d'envoyer une requête AJAX périodiquement à notre site.
 
-Ajouter appel de fonction load() à la fin du script.
+### Implémentation
 
-load();
+#### Modification de fichier système:
 
-setIntervals( load, 2000 ); // toutes les 2000 ms ça change automatiquement.
+Pour pouvoir lancer depuis un navigateur en tapant `` res.heigvd.ch:8080`` sous **windows** il a également fallut modifier un fichier système. Celui-ci est le fichier ``host`` contenu à l'adresse: `C:\Windows\System32\drivers\etc`. Il se présente ainsi:
 
-remplacer un bout dans code dans html avec <span class="skills" ... >
+````
+# Copyright (c) 1993-2009 Microsoft Corp.
+#
+# This is a sample HOSTS file used by Microsoft TCP/IP for Windows.
+#
+# This file contains the mappings of IP addresses to host names. Each
+# entry should be kept on an individual line. The IP address should
+# be placed in the first column followed by the corresponding host name.
+# The IP address and the host name should be separated by at least one
+# space.
+#
+# Additionally, comments (such as these) may be inserted on individual
+# lines or following the machine name denoted by a '#' symbol.
+#
+# For example:
+#
+#      102.54.94.97     rhino.acme.com          # source server
+#       38.25.63.10     x.acme.com              # x client host
+
+# localhost name resolution is handled within DNS itself.
+#	127.0.0.1       localhost
+#	::1             localhost
+
+# POUR LE COURS DE RES
+127.0.0.1 res.heigvd.ch
+
+# Added by Docker Desktop
+192.168.0.192 host.docker.internal
+192.168.0.192 gateway.docker.internal
+# To allow the same kube context to work on the host and the container:
+127.0.0.1 kubernetes.docker.internal
+# End of section
+````
+
+Nous y avons ajouté la ligne ``127.0.0.1 res.heigvd.ch`` qui va donc faire la correspondance avec le ``localhost`` et le domaine ``res.heigvd.ch``. **Attention** ! Le fichier doit-être ouvert en tant qu'administrateur pour pouvoir être modifié.
+
+#### Modification d'outils existants
+
+Tout les outils nécessaires au bon fonctionnement de cette étape sont disponible dans le dossier etape_4.
+
+Dans un premier temps nous avons récupéré les travaux effectué dans les étapes précédentes. A savoir: 
+
+- L'image docker express
+- L'image docker nginx pour le site statique
+- L'image docker du reverse proxy
+
+Celle-ci ont du subir quelques légère modification, en effet, nous avons installé vim sur toutes les machines et d'autres outils. Il a donc fallut ajouter la ligne suivante dans tous les dockerfile:
+
+````dockerfile
+RUN apt-get update && \
+  apt-get install -y vim nano tcpdump netcat net-tools
+````
+
+La commande ``RUN`` du docker file va exécuter les lignes de commandes et dans notre cas installer plusieurs outils.
+
+Ensuite, il a fallu modifier légèrement le index.js de l'express-image:
+
+````javascript
+var Chance  = require('chance');
+var chance = new Chance();
+
+var express  = require('express');
+var app = express();
+
+app.get("/", function(req, res){
+    res.send(generateCompanies());
+});
+
+app.listen(3000, function () {
+    console.log("Accept HTTP requests on port 3000");
+});
+
+
+function generateCompanies(){
+    var numberOfCompanies = chance.integer({
+        min:0,
+        max:10
+    });
+    console.log("Number of companies generated: " + numberOfCompanies);
+    var companies = [];
+    for(var i = 0; i < numberOfCompanies; ++i) {
+        var companyName = chance.company();
+        var companyNameNoSpace = companyName.replace(/\W/g, '');
+        companies.push({
+            name: companyName,
+            adress: chance.address({
+                short_suffix: true
+            }),
+            website: chance.url({
+                domain: "www." + companyNameNoSpace + ".com"
+            }),
+            income: chance.dollar({
+                min: 100000,
+                max: 1000000000
+            })
+        });
+    }
+
+    console.log(companies);
+    return companies;
+}
+
+````
+
+En effet, il a fallut modifier l'appel à ``/api/companies`` puisque le reverse proxy ne fera la correspondance qu'avec l'appel à ``/``. Le fichier de configuration du reverse-proxy est le suivant:
+
+````xml
+<VirtualHost *:80>
+        ServerName res.heigvd.ch
+
+        #ErrorLog ${APACHE_LOG_DIR}/error.log
+        #CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+        ProxyPass "/api/companies/" "http://172.17.0.2:3000/"
+        ProxyPassReverse "/api/companies/" "http://172.17.0.2:3000/"
+
+        ProxyPass "/" "http://172.17.0.3:80/"
+        ProxyPassReverse "/" "http://172.17.0.3:80/"
+</VirtualHost>
+
+# vim: syntax=apache ts=4 sw=4 sts=4 sr noet
+````
+
+Et nous pouvons y voir, que la correspondance avec ``api/companies/`` se fait avec ``http://172.17.0.2:3000/`` soit l'appel à ``/``
+
+Le reverse proxy ne nécessite aucune modification. 
+
+Enfin nous avons du modifier le site statique afin d'avoir un champ mis à jour par des requêtes ajax périodiques. Dans un premier temps, nous avons créé ce champ dans le code source de la page web définie par le fichier index.html de l'image nginx.
+
+````html
+<!DOCTYPE html>
+<!--
+	Rocket Internet by TEMPLATE STOCK
+	templatestock.co @templatestock
+	Released for free under the Creative Commons Attribution 3.0 license (templated.co/license)
+-->
+
+<html>
+<head>
+	<title>Rocket Internet by TEMPLATE STOCK</title>
+
+	<!-- Bootstrap CSS -->
+	<link rel="stylesheet" type="text/css" href="css/bootstrap.min.css">
+
+	<!-- Goggle Font -->
+	<link href='https://fonts.googleapis.com/css?family=Lato:400,700,900,300' rel='stylesheet' type='text/css'>
+
+	<!-- Font Css -->
+	<link rel="stylesheet" type="text/css" href="css/font-awesome.min.css">
+
+	<!-- Custom CSS -->
+	<link rel="stylesheet" type="text/css" href="css/style.css">
+
+	<!-- Animation Css -->
+	<link rel="stylesheet" href="css/animate.css">
+	
+	<meta charset="UTF-8">
+
+</head>
+<body>
+<header>
+	<div id="homeFullScreen">
+		<div class="header-text">
+			<h1>HEIG-VD !!</h1>
+			<div class="vertical-line"></div>
+			<p>
+				L'école faites pour suivre un 
+				<br />
+				cours de programmation réseau
+			</p>
+			<b><span style="color:red" class="company">Ici il y a des entreprises!</span></b>
+			<br />
+			<span style="color:deepskyblue" class="website">Ici il y a un site internet</span>
+		</div><!-- End HeaderText -->
+	</div><!-- End homeFullScreen -->
+</header><!-- End Header -->
+
+<!-- Feature -->
+
+<section class="feature">
+	<div class="container">
+		<div class="row">
+			<div class="col-md-6 col-sm-6">
+				<div class="feature-box">
+					<h1>RES</h1>
+					<p>Vous apprendrez à tout faire, des sockets à la configuration docker</p>
+				</div>
+			</div><!-- End col-md-6 -->
+			<div class="col-md-6 col-sm-6 nopadding">
+				<img src="images/1.png">
+			</div><!-- End col-md-6 -->
+
+			<div class="clearfix"></div><!-- End clearfix -->
+
+			<div class="col-md-6 col-sm-6 nopadding">
+				<img src="images/p-2.png">
+			</div><!-- End col-md-6 -->
+			<div class="col-md-6 col-sm-6">
+				<div class="feature-box">
+					<h1>Attendez plus !</h1>
+					<p>Venez profitez de ce cours depuis chez vous</p>
+				</div>
+			</div><!-- End col-md-6 -->
+		</div>
+	</div>
+</section>
+
+<!-- Footer -->
+<footer>
+	<ul class="in-line">
+		<li><a href="https://www.youtube.com/watch?v=XFO4OmcfI3U"><span><i class="fa fa-youtube"></i></span></a></li>
+	</ul>
+	<span class="copyright">&#169; HEIG-VD . All rights reserved. Design By <a href="http://templatestock.co">Templatestock.co</a></span>
+</footer>
+	
+
+
+<!-- Main JS -->
+<script type="text/javascript" src="js/jquery-main.js"></script>
+
+<!-- Bootstrap JS -->
+<script type="text/javascript" src="js/bootstrap.min.js"></script>
+
+<!-- Animation JS -->
+<script type="text/javascript" src="js/wow.min.js"></script>
+
+<!-- Custom JS -->
+<script type="text/javascript" src="js/custom.js"></script>
+
+<!-- Custom script -->
+<script src="js/myscript.js"></script>
+
+<!-- Custom script to load random companies-->
+<script src="js/companies.js"></script>
+
+</body>
+</html>
+````
+
+Les champs: ``company`` et ``website`` du header seront ceux qui seront mis à jour. Nous leurs avons assignés des couleurs pour qu'ils soient plus visible. 
+
+Ces champs définis il nous reste à les remplir. 
+
+Pour cela, nous avons créé un script javascript qui est dans le dossier ``nginx-static-image/src/js`` et qui se nomme ``companies.js``:
+
+````javascript
+$(function() {
+    console.log("Loading companies...");
+    function loadCompanies() {
+        $.getJSON("api/companies/", function (companies) {
+            console.log(companies);
+            var messageCompany = "No company here";
+            var messageWebsite = "No website here";
+            //récupères les premières données générées par api/companies
+            if (companies.length > 0) {
+                messageCompany = companies[0].name;
+                messageWebsite = companies[0].website;
+            }
+            //Assignation aux champs
+            $(".company").text(messageCompany);
+            $(".website").text(messageWebsite);
+        });
+    };
+	
+    loadCompanies();
+    //timer pour reload les données toutes les 3 secondes.
+    setInterval(loadCompanies, 3000);
+
+});
+````
+
+Celui-ci va exécuter ``api/companies`` pour récupérer les données générées dynamiquement et les assigner dans les champs ``company`` et ``website``. La fonction setInterval va exécuter le script périodiquement, dans notre cas, toutes les 3 secondes.
+
+Ceci fait, les images docker sont lançables et fonctionnelles ! 
+
+### Démonstration
+
+La procédure doit-être respectée scrupuleusement sans quoi le site ne fonctionnera pas.
+
+1. Si vous avez déjà exécuté cette partie du projet, supprimez tous les containers et toutes les images docker relatives à cette partie.
+2. Build les images express, et nginx_static avec leur script respectif `build-image.sh`
+3. Allumer les 2 premiers containers dans cette ordre
+
+   1. `docker run -d --name express_dynamic res/nodeserv`
+   2. `docker run -d --name nginx_static res/nginx-server`
+4. Vérifier que les adresses IP soient les bonnes
+
+   1. `docker inspect express_dynamic | grep -i ipaddress` -> `172.17.0.2`
+   2. `docker inspect nginx_static | grep -i ipaddress` -> `172.17.0.3`
+   3. Si incorrect, changer fichier `docker-images/reverse-proxy/conf/sites-available/001-reverse-proxy.conf` avec les bonne adresse. Puis recommencez cette procédure.
+5. Placer vous dans le dossier `docker-images/reverse-proxy` et exécuter le script `build-image.sh`
+6. Lancer un container avec `docker run -d -p 8080:80 res/reverse-proxy`
+7. Essayer la configuration
+
+   1. Sur votre navigateur avec l'adresse http://res.heigvd.ch:8080
+
+![image-20210530150638568](figures/image-20210530150638568.png)
+
+Vous pourrez constater que les 2 champs en rouge et bleu sont mis à jour périodiquement.
+
+La fonction ``api/companies`` est toujours fonctionnelle, puisque si vous vous rendez sur la page ``res.heigvd.ch:8080/api/companies`` vous pourrez toujours consulter les entreprises générée dynamiquement:
+
+![image-20210530151302994](figures/image-20210530151302994.png)
 
 ## Etape 5
 
